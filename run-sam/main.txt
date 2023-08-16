@@ -9,3 +9,21 @@ cd eb-pipes
 sam build
 
 sam deploy --profile samprofile --region us-east-1 --stack-name samstack --capabilities CAPABILITY_IAM
+
+
+
+CREATE_COMPLETE                      AWS::Events::EventBus                PipeEventBus                         -                                  
+CREATE_COMPLETE                      AWS::Logs::LogGroup                  LogGroupForEvents                    -                                  
+  
+CREATE_COMPLETE                      AWS::DynamoDB::Table                 OrderDetailsDDBTable                 -                                  
+
+CREATE_COMPLETE                      AWS::IAM::Role                       EventBridgeIAMRole                   -                                  
+CREATE_COMPLETE                      AWS::IAM::Role                       PipeRole                             -                                  
+ 
+CREATE_COMPLETE                      AWS::Pipes::Pipe                     Pipe                                 -                                  
+CREATE_COMPLETE                      AWS::Events::Rule                    LogsRule                             -                                  
+
+CREATE_COMPLETE                      AWS::Logs::ResourcePolicy            LogGroupForEventsPolicy              -                                  
+CREATE_COMPLETE                      AWS::CloudFormation::Stack           samstack                             -     
+
+===================================================================================================================================
