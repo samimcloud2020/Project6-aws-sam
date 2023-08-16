@@ -1,0 +1,33 @@
+ec2(state change notification)---------> default bus------->eventbridgerule------>step fun----->
+
+{
+  "detail-type": ["EC2 Instance State-change Notification"],
+  "source": ["aws.ec2"]
+}
+
+An EC2 state change event looks like this:
+
+{
+  "version": "0",
+  "id": "672123fe-53aa-3b22-3b37-1fae26df2aff",
+  "detail-type": "EC2 Instance State-change Notification",
+  "source": "aws.ec2",
+  "account": "1234567890",
+  "time": "2022-08-17T18:25:01Z",
+  "region": "eu-west-1",
+  "resources": [
+    "arn:aws:ec2:eu-west-1:1234567890:instance/i-1234567890"
+  ],
+  "detail": {
+    "instance-id": "i-0123456789",
+    "state": "running"
+  }
+}
+==========================================================================================
+Step Functions uses JSONPath to select, transform, and move data through the states within a state machine. 
+This flexibility means that, in this example, no compute resources such as AWS Lambda are required. 
+This can mean less custom code, lower cost, and less complexity.
+
+Step Functions Workflow Studio lets you design workflows visually. 
+These are the key actions that take place when the state machine runs using the EC2 state change event:
+=============================================================================================
