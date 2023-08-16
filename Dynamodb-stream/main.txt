@@ -1,0 +1,25 @@
+DynamoDB Streams offer us a few options when we setup a stream. When changes occur, 
+you can get the updated item, the previous item, both or just the keys:
+
+OLD_IMAGE - The entire item, as it appeared before it was modified.
+NEW_IMAGE - The entire item, as it appears after it was modified.
+KEYS_ONLY - Only the key attributes of the modified item.
+NEW_AND_OLD_IMAGES - Both the new and the old images of the item.
+
+==========================================================================================
+One awesome feature of DynamoDB is the ability to listen to changes and react to them downstream.
+
+=========================================================================================
+dynamodb------changes----->dynamodb stream------------->lambda/eventbridge
+
+==========================================================================================
+==================Things to consider using this pattern===================================
+Think about failures. On step 4 you might want to attach a DLQ (Dead letter queue)
+to capture any failures in processing the events from the DynamoDB stream.
+
+All data in DynamoDB Streams is subject to a 24-hour lifetime.
+You can retrieve and analyze the last 24 hours of activity for any given table.
+Data that is older than 24 hours is susceptible to trimming (removal) at any moment.
+
+DynamoDB charges for reading data from DynamoDB Streams in read request units
+=============================================================================================
