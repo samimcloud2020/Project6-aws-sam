@@ -31,3 +31,131 @@ This can mean less custom code, lower cost, and less complexity.
 Step Functions Workflow Studio lets you design workflows visually. 
 These are the key actions that take place when the state machine runs using the EC2 state change event:
 =============================================================================================
+1. Remove problem characters from input
+Pass states allow us to transform inputs and outputs. In this architecture, a Pass state is used to remove any problem characters 
+from the incoming event that are known to cause issues in future steps, such as API calls to services.
+
+In this example, the parameters for the API call used in Step 2 requires the EC2 instance ID. 
+This information is in the detail of the original event, but the API action can’t use anything with a hyphen in it.
+
+To solve this, use a JSONPath Parameter to effectively rewrite this information without the hyphen. 
+This creates a new field named instanceid, which is assigned the value from the original event’s detail.
+
+{
+  "instanceid.$": "$.detail.instance-id"
+}
+================================================================================
+2. Get instance name from Tag
+The “EC2: DescribeInstances” task in Step Functions is an example of a native SDK integration with an AWS service. This action expects a single parameter to the API, an array of EC2 instance IDs.
+
+{
+  "InstanceIds.$": "States.Array($.detail.refined.instanceid)"
+}
+JSON
+The States.Array() intrinsic function is used to wrap the instance ID from the re-written field created in step 1. This single-member array is then passed to the EC2 Describe Instances API.
+
+When a response is received from the EC2 Describe Instances API call, it is passed to a Result Selector. The purpose of this is to extract the value of a “Name” tag, if one was returned from the EC2 Describe Instances API.
+
+Step Functions supports the use of JSONPath filter expressions.
+
+{
+  "instancename.$": "$..Reservations[0].Instances[0].Tags[?(@.Key==Name)].Value",
+  "instanceid.$": "$.Reservations[0].Instances[0].InstanceId"
+}
+JSON
+To understand the advanced JSONPath filter expression used in this example, read this blog post.
+
+If an error occurs with the API call, or the filter expression is unable to find a “Name” tag on the EC2 instance, then Step Functions allows you to handle these errors within the workflow.
+
+3. Convert instance name to a string
+The output from the previous state returns an array, but an EC2 instance can only have one unique “Name” tag. A pass state is used again, with a parameter as seen in Step 1. This parameter expression takes the first element from the array and stores it in a new field named instancename.
+
+{
+  "instancename.$": "$.detail.refined.instancename[0]",
+  "instanceid.$": "$.detail.refined.instanceid"
+}
+JSON
+As with previous steps, the instanceid is re-written as part of the output, and both of these values are appended to the state’s output.
+
+4. Get default name from Parameter Store
+If the filter expression in the result selector in step 2 fails for any reason, then Step Functions error handling moves here.
+
+Failures can happen for a variety of reasons, and with Step Functions, you can branch out error handling for each different error type. In this example, all errors are dealt with the same regardless of the cause being a missing “Name” tag, or a permissions issue. In this architecture, a default placeholder value is used in place of the name of the instance. In your context, a different approach may be more suitable.
+
+The default placeholder name is stored as a static value in AWS Systems Manager Parameter Store. The native Systems Manager: GetParameter action within Step Functions can retrieve this value directly. An advantage of this approach is that the parameter can be updated externally without having to make any changes to the Step Functions state machine itself.
+
+5. Add ID back to refined
+A pass state is used to format the response from the Parameter Store API and parameter expression then appends the default instance name on to the output.
+
+Whether the workflow execution followed the intended execution path, or encountered an error, there is now an enriched event payload with an instance name.
+
+6. Emit enriched event
+The EventBridge: PutEvents native SDK action within Step Functions is used to construct and emit the enriched event.
+
+{
+  "Entries": [
+    {
+      "Detail": {
+        "Message.$": "$"
+      },
+      "DetailType": "EnrichedEC2Event",
+      "EventBusName": "serverless-event-enrichment-ApplicationEventBus",
+      "Source": "custom.enriched.ec2"
+    }
+  ]
+}
+JSON
+The DetailType and Source of the enriched event are custom values, specified in the last step of the state machine. As you consider schemas for your events within your organization, note that the AWS prefix is reserved for AWS service events.
+
+The enriched event payload looks like this:
+
+{
+  "version": "0",
+  "id": "a80e378b-e9a7-8007-1f18-b947e6d72c4b",
+  "detail-type": "EnrichedEC2Event",
+  "source": "custom.enriched.ec2",
+  "account": "123456789",
+  "time": "2022-08-17T18:25:03Z",
+  "region": "eu-west-1",
+  "resources": [
+    "arn:aws:states:eu-west-1:123456789:stateMachine:EventEnrichmentStateMachine-2T5jFlCPOha1",
+    "arn:aws:states:eu-west-1:123456789:execution:EventEnrichmentStateMachine-2T5jFlCPOha1:672123fe-53aa-3b22-3b37-1fae26df2aff_90821b68-ba92-2374-5015-8804c8da5769"
+  ],
+  "detail": {
+    "Message": {
+      "version": "0",
+      "id": "672123fe-53aa-3b22-3b37-1fae26df2aff",
+      "detail-type": "EC2 Instance State-change Notification",
+      "source": "aws.ec2",
+      "account": "123456789",
+      "time": "2022-08-17T18:25:01Z",
+      "region": "eu-west-1",
+      "resources": [
+        "arn:aws:ec2:eu-west-1:123456789:instance/i-123456789"
+      ],
+      "detail": {
+        "instance-id": "i-123456789",
+        "state": "running",
+        "refined": {
+          "instancename": "ec2-enrichment-demo-instance",
+          "instanceid": "i-123456789"
+        }
+      }
+    }
+  }
+}
+JSON
+Consuming enriched events
+When enriching event data in real-time, the events are only valuable if they’re consumed. To use these enriched events, a consuming service must create and own a new EventBridge rule on the custom application bus. In this architecture, an appropriate rule pattern is:
+
+{
+  "detail-type": ["EnrichedEC2Event"],
+  "source": ["custom.enriched.ec2"]
+}
+JSON
+The target of the rule depends on the use case. For operational events, then service management applications or log aggregation services may make the most sense. In this example, the rule has an SNS topic as the target. When SNS receives a message, it is sent to operator via email. With EventBridge, future consumers can add their own rules to match the enriched events, and add their specific target actions to suit their use case.
+
+Conclusion
+This post shows how you can create rules in EventBridge to react to operational events from AWS services. These events are routed to Step Functions, which runs a workflow consisting of steps to enrich the event, handle errors, and emit the enriched event. The example shows how to consume the enriched events, resulting in an operator receiving an email.
+
+This example is available on GitHub as an AWS Serverless Application Model (AWS SAM) template. It contains instructions to deploy, test, and then remove all of the resources when you’ve finished.
