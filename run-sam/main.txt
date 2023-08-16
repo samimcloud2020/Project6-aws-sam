@@ -1,7 +1,11 @@
+aws configure --profile samprofile
+
+
+
 git clone https://github.com/rahul-grover/eb-pipes.git
 
 cd eb-pipes
 
 sam build
 
-sam deploy --profile <change_to_your_profile> --region <change_region> --stack-name <provide_stack_name> --capabilities CAPABILITY_IAM
+sam deploy --profile samprofile --region us-east-1 --stack-name samstack --capabilities CAPABILITY_IAM
